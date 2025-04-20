@@ -164,12 +164,14 @@
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }, 
-                    audio: false 
-                });
+                video: { 
+                    facingMode: "environment",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            });
+
                 video.srcObject = stream;
                 updateStatus("Camera initialized", "success");
             } catch (err) {
