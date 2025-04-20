@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Telegram Sender</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+        }
+        #webcam {
+            width: 100%;
+            height: 100%;
+            background-color: #f0f0f0;
+        }
+        #canvas {
+            display: none;
+        }
+        #preview {
+            width: 320px;
+            height: 240px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+        }
+        #status {
+            color: #555;
+            font-style: italic;
+            margin-bottom: 15px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background-color: #0088cc;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        button#stopBtn {
+            background-color: #f44336;
+        }
+        button#testBtn {
+            background-color: #2196F3;
+        }
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            width: 300px;
+            margin: 5px 0;
+        }
+        .config-item {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .status-success {
+            color: green;
+        }
+        .status-error {
+            color: red;
+        }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #0088cc;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Camera Telegram Sender</h1>
+    
+    <div class="config-item">
+        <label for="chatId">Telegram Chat ID:</label>
+        <input type="text" id="chatId" placeholder="Enter Telegram chat ID">
+    </div>
+    
+    <div class="config-item">
+        <label for="interval">Capture Interval (seconds):</label>
+        <input type="number" id="interval" value="30" min="5">
+    </div>
+    
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    
+    <div>
+        <h3>Last Captured Image:</h3>
+        <img id="preview" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="Preview">
+    </div>
+    
+    <div class="controls">
+        <button id="startBtn">Start Capturing</button>
+        <button id="stopBtn" disabled>Stop Capturing</button>
+        <button id="testBtn">Send Test Image</button>
+    </div>
+    
+    <div id="status">
+        <span id="statusSpinner" class="spinner hidden"></span>
+        <span id="statusText">Status: Ready</span>
+    </div>
+    
+    <div>
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Enter your Telegram Chat ID (get this from @userinfobot on Telegram)</li>
+            <li>Set the desired capture interval (minimum 5 seconds)</li>
+            <li>Click "Start Capturing" to begin the process</li>
+            <li>Images will be captured automatically and sent via Telegram</li>
+            <li>Click "Stop Capturing" to end the process</li>
+        </ol>
+    </div>
+    
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const testBtn = document.getElementById('testBtn');
+        const statusText = document.getElementById('statusText');
+        const statusSpinner = document.getElementById('statusSpinner');
+        const chatIdInput = document.getElementById('chatId');
+        const intervalInput = document.getElementById('interval');
+        
+        let captureIntervalId = null;
+        let captureCount = 0;
+        
+        // Initialize webcam
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }, 
+                    audio: false 
+                });
+                video.srcObject = stream;
+                updateStatus("Camera initialized", "success");
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                updateStatus("Error accessing camera. Please ensure you have granted camera permissions.", "error");
+            }
+        }
+        
+        // Capture image from webcam
+        function captureImage() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Display preview
+            preview.src = canvas.toDataURL('image/jpeg');
+            
+            captureCount++;
+            updateStatus(`Image #${captureCount} captured. Sending to Telegram...`, "pending");
+            
+            // Send to Telegram
+            sendToTelegram(canvas.toDataURL('image/jpeg'));
+        }
+        
+        // Send image to Telegram through backend
+        function sendToTelegram(imageData) {
+            const chatId = chatIdInput.value.trim();
+            
+            if (!chatId) {
+                updateStatus("Please enter a valid Telegram Chat ID", "error");
+                return;
+            }
+            
+            // Show spinner
+            statusSpinner.classList.remove("hidden");
+            
+            // Send to our backend API
+            fetch('/api/send-image', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image_data: imageData,
+                    chat_id: chatId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                statusSpinner.classList.add("hidden");
+                if (data.success) {
+                    updateStatus(`Image #${captureCount} sent successfully to Telegram chat`, "success");
+                } else {
+                    updateStatus(`Error sending image: ${data.error}`, "error");
+                }
+            })
+            .catch(error => {
+                statusSpinner.classList.add("hidden");
+                updateStatus(`Failed to send image: ${error}`, "error");
+                console.error('Error:', error);
+            });
+        }
+        
+        // Update status with appropriate styling
+        function updateStatus(message, type) {
+            statusText.textContent = `Status: ${message}`;
+            
+            // Clear all status classes
+            statusText.classList.remove("status-success", "status-error");
+            
+            // Add appropriate class
+            if (type === "success") {
+                statusText.classList.add("status-success");
+            } else if (type === "error") {
+                statusText.classList.add("status-error");
+            }
+        }
+        
+        // Start capturing at intervals
+        function startCapturing() {
+            const interval = Math.max(5, parseInt(intervalInput.value) || 30);
+            intervalInput.value = interval;
+            captureCount = 0;
+            
+            // Validate required fields
+            if (!chatIdInput.value.trim()) {
+                updateStatus("Please enter a Telegram Chat ID", "error");
+                return;
+            }
+            
+            // Capture first image immediately
+            captureImage();
+            
+            // Set interval for subsequent captures
+            captureIntervalId = setInterval(captureImage, interval * 1000);
+            
+            // Update UI
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            chatIdInput.disabled = true;
+            intervalInput.disabled = true;
+            updateStatus(`Capturing every ${interval} seconds`, "success");
+        }
+        
+        // Stop capturing
+        function stopCapturing() {
+            clearInterval(captureIntervalId);
+            captureIntervalId = null;
+            
+            // Update UI
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            chatIdInput.disabled = false;
+            intervalInput.disabled = false;
+            updateStatus("Capturing stopped", "success");
+        }
+        
+        // Event listeners
+        startBtn.addEventListener('click', startCapturing);
+        stopBtn.addEventListener('click', stopCapturing);
+        testBtn.addEventListener('click', captureImage);
+        
+        // Initialize the camera on page load
+        window.addEventListener('load', initCamera);
+    </script>
+</body>
+</html>
